@@ -14,7 +14,7 @@
    (font :accessor font)))
 
 (defparameter *tex-size* 256)
-
+(defparameter *FRONT-BACK* 0.0)
 
 (defmethod glop:on-event ((window 3bovr-test) (event glop:key-event))
   ;; exit on ESC key
@@ -22,6 +22,10 @@
     (case (glop:keysym event)
       (:escape
        (glop:push-close-event window))
+      (:left  (format t "~& left  pressed ~%"))
+      (:right (format t "~& right pressed ~%"))
+      (:up    (setf *FRONT-BACK* (+ *FRONT-BACK* .1)) (format t "~& up    pressed ~%"))
+      (:down  (setf *FRONT-BACK* (- *FRONT-BACK* .1)) (format t "~& down  pressed ~%"))
       (:space
        (format t "latency = ~{~,3,3f ~,3,3f ~,3,3f ~,3,3f ~,3,3f~}~%"
                (%ovr::get-float-array (hmd window) :dk2-latency 5))))))
@@ -92,55 +96,65 @@ latency = ~{m2p:~,3,3f ren:~,3,3f tWrp:~,3,3f~%~
                  finally (setf (hud-count win) i))
         (%gl:unmap-buffer :array-buffer)))))
 
+(defparameter *buf* (make-array '(1024) 
+                                :element-type 'single-float
+                                :fill-pointer 0
+                                :adjustable t))
+(defparameter *count* 0)
+(defparameter *color*  (vector 0 0 0 1)) 
+(defparameter *normal* (vector 1 0 0))
+
+(defun color (r g b &optional (a 1))
+  (setf *color* (vector r g b a)))
+
+(defun normal (x y z)
+  (setf *color* (vector x y z)))
+
+(defun vertex (x y z &key (w 1) )  
+  (loop for i in (list x y z w)
+   do (vector-push-extend (float i 0.0) *buf*))
+  (loop for i across *color*
+     do (vector-push-extend (float i 0.0) *buf*))
+  (loop for i across *normal*
+     do (vector-push-extend (float i 0.0) *buf*))
+  (incf *count*))
+  
+(defun cube (x y z r)
+  (let* ((x (coerce x 'single-float))
+         (y (coerce y 'single-float))
+         (z (coerce z 'single-float))
+         (r (coerce r 'single-float))
+         (a (sb-cga:vec (- r) (- r) (- r)))
+         (b (sb-cga:vec (- r) (+ r) (- r)))
+         (c (sb-cga:vec (+ r) (+ r) (- r)))
+         (d (sb-cga:vec (+ r) (- r) (- r)))
+         (fpi (coerce pi 'single-float)))
+    (loop for m in (list (sb-cga:rotate* 0.0 0.0 0.0)
+                         (sb-cga:rotate* 0.0 (* fpi 1/2) 0.0)
+                         (sb-cga:rotate* 0.0 (* fpi 2/2) 0.0)
+                         (sb-cga:rotate* 0.0 (* fpi 3/2) 0.0)
+                         (sb-cga:rotate* (* fpi 1/2) 0.0 0.0)
+                         (sb-cga:rotate* (* fpi 3/2) 0.0 0.0))
+       do (let* ((n (sb-cga:transform-point
+                    (sb-cga:vec 0.0 0.0 1.0) m)))
+            (normal (aref n 0) (aref n 1) (aref n 2)))
+         (flet ((v (v)
+                  (let ((v (sb-cga:transform-point v m)))
+                    (vertex (+ x (aref v 0))
+                            (+ y (aref v 1))
+                            (+ z (aref v 2))))))
+           (v a)
+           (v b)
+           (v c)
+           (v a)
+           (v c)
+           (v d)))))
+
+
+
 (defun build-world (vao)
-  (let ((vbo (gl:gen-buffer))
-        (color (vector 0 0 0 1))
-        (normal (vector 1 0 0))
-        (buf (make-array '(1024) :element-type 'single-float
-                         :fill-pointer 0 :adjustable t))
-        (count 0))
-   (labels ((color (r g b &optional (a 1))
-              (setf color (vector r g b a)))
-            (normal (x y z)
-              (setf normal (vector x y z)))
-            (vertex (x y z &optional (w 1))
-              (loop for i in (list x y z w)
-                    do (vector-push-extend (float i 0.0) buf))
-              (loop for i across color
-                    do (vector-push-extend (float i 0.0) buf))
-              (loop for i across normal
-                    do (vector-push-extend (float i 0.0) buf))
-              (incf count))
-            (cube (x y z r)
-              (let* ((x (coerce x 'single-float))
-                     (y (coerce y 'single-float))
-                     (z (coerce z 'single-float))
-                     (r (coerce r 'single-float))
-                     (a (sb-cga:vec (- r) (- r) (- r)))
-                     (b (sb-cga:vec (- r) (+ r) (- r)))
-                     (c (sb-cga:vec (+ r) (+ r) (- r)))
-                     (d (sb-cga:vec (+ r) (- r) (- r)))
-                     (fpi (coerce pi 'single-float)))
-                (loop for m in (list (sb-cga:rotate* 0.0 0.0 0.0)
-                                     (sb-cga:rotate* 0.0 (* fpi 1/2) 0.0)
-                                     (sb-cga:rotate* 0.0 (* fpi 2/2) 0.0)
-                                     (sb-cga:rotate* 0.0 (* fpi 3/2) 0.0)
-                                     (sb-cga:rotate* (* fpi 1/2) 0.0 0.0)
-                                     (sb-cga:rotate* (* fpi 3/2) 0.0 0.0))
-                      do (let ((n (sb-cga:transform-point
-                                   (sb-cga:vec 0.0 0.0 1.0) m)))
-                           (normal (aref n 0) (aref n 1) (aref n 2)))
-                         (flet ((v (v)
-                                  (let ((v (sb-cga:transform-point v m)))
-                                    (vertex (+ x (aref v 0))
-                                            (+ y (aref v 1))
-                                            (+ z (aref v 2))))))
-                           (v a)
-                           (v b)
-                           (v c)
-                           (v a)
-                           (v c)
-                           (v d))))))
+  (let ((vbo (gl:gen-buffer)))
+   (progn
      ;; checkerboard ground
      (loop for i from -8 below 8
            do (loop for j from -8 below 8
@@ -163,7 +177,7 @@ latency = ~{m2p:~,3,3f ren:~,3,3f tWrp:~,3,3f~%~
                   (cube (+ 0.0 (r)) (- (r)) (+ 1.5 (r)) (+ 0.05 (random 0.10))))))
      (let ((stride (* 11 4)))
        (gl:bind-buffer :array-buffer vbo)
-       (%gl:buffer-data :array-buffer (* count stride) (cffi:null-pointer)
+       (%gl:buffer-data :array-buffer (* *count* stride) (cffi:null-pointer)
                         :static-draw)
        (gl:bind-vertex-array vao)
        (gl:enable-client-state :vertex-array)
@@ -174,15 +188,16 @@ latency = ~{m2p:~,3,3f ren:~,3,3f tWrp:~,3,3f~%~
        (%gl:color-pointer 4 :float stride (* 4 4)))
      (let ((p (%gl:map-buffer :array-buffer :write-only)))
        (unwind-protect
-            (loop for i below (fill-pointer buf)
+            (loop for i below (fill-pointer *buf*)
                   do (setf (cffi:mem-aref p :float i)
-                           (aref buf i)))
+                           (aref *buf* i)))
          (%gl:unmap-buffer :array-buffer)))
      (gl:bind-vertex-array 0)
      (gl:delete-buffers (list vbo))
-     count)))
+     *count*)))
 
 (defparameter *w* nil)
+(defparameter *move* nil)
 (defun draw-world (win)
   (setf *w* win)
   (gl:clear :color-buffer :depth-buffer)
@@ -200,11 +215,15 @@ latency = ~{m2p:~,3,3f ren:~,3,3f tWrp:~,3,3f~%~
   (gl:with-pushed-matrix* (:modelview)
     ;(gl:load-identity)
     (gl:translate -2 0.2 -2.5)
+    ;; (gl:translate (aref *move* 0) 
+    ;;               (aref *move* 1)
+    ;;               (aref *move* 2))
     (when (and (hud-count win) (plusp (hud-count win)))
       (gl:enable :texture-2d)
       (gl:bind-texture :texture-2d (hud-texture win))
       (gl:bind-vertex-array (hud-vao win))
-      (%gl:draw-arrays :triangles 0 (hud-count win))))
+      (%gl:draw-arrays :triangles 0 (hud-count win)))
+    )
     (gl:bind-vertex-array 0))
 
 
@@ -281,7 +300,16 @@ latency = ~{m2p:~,3,3f ren:~,3,3f tWrp:~,3,3f~%~
                                   (getf size :h)))))
              (viewport (getf (elt eye-textures index) :render-viewport)))
            (gl:enable :scissor-test)
+           ;; (setf (aref position 2) (+ (aref position 2) *FRONT-BACK*))
+           ;; (setf *FRONT-BACK* 0)
            ;; configure matrices
+           (let* ((quat (kit.math::quaternion (aref orientation 3)
+                                             (aref orientation 0)
+                                             (aref orientation 1)
+                                             (aref orientation 2))))
+             (setf *move* 
+                   (kit.math::quat-rotate-vector quat 
+                                                 (kit.math::vec 0.0 0.0 *FRONT-BACK*)))
            (gl:with-pushed-matrix* (:projection)
              (gl:load-transpose-matrix projection)
              (gl:with-pushed-matrix* (:modelview)
@@ -290,14 +318,18 @@ latency = ~{m2p:~,3,3f ren:~,3,3f tWrp:~,3,3f~%~
                 (kit.math::quat-rotate-matrix
                  ;; kit.math quaternions are w,x,y,z but libovr quats
                  ;; are x,y,z,w
-                 (kit.math::quaternion (aref orientation 3)
-                                       (aref orientation 0)
-                                       (aref orientation 1)
-                                       (aref orientation 2) )))
+quat))
+               
                (gl:translate (- (aref position 0))
                              (- (aref position 1))
                              (- (aref position 2)))
-               (draw-world win))))
+               (gl:translate (aref *move* 0) 
+                  (aref *move* 1)
+                  (aref *move* 2))
+               (draw-world win)
+               ))  
+             )
+           )
       (gl:bind-framebuffer :framebuffer 0)
       ;; pass textures to SDK for distortion, display and vsync
       (%ovr::end-frame hmd head-pose eye-textures))))
@@ -510,6 +542,16 @@ latency = ~{m2p:~,3,3f ren:~,3,3f tWrp:~,3,3f~%~
 
 #++
 (test-3bovr)
+;; (defun run ()
+;;   (unwind-protect (test-3bovr) (clx:open-display :display )))
+
+;; (defmacro with-display (host (display screen root-window) &body body)
+;;   `(let* ((,display (xlib:open-display ,host))
+;;           (,screen (first (xlib:display-roots ,display)))
+;;           (,root-window (xlib:screen-root ,screen)))
+;;      (unwind-protect (progn ,@body)
+;;        (xlib:close-display ,display))))
+
 
 #++
 (let ((*default-pathname-defaults* (asdf:system-relative-pathname '3b-ovr "./")))
